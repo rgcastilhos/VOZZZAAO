@@ -231,10 +231,26 @@ class ActionExecutor {
   }
 
   Future<CommandResult> _closeExternalApp(String? appName) async {
-    return _pressBack(
-      times: 2,
-      successMessage:
-          appName != null ? 'Fechando $appName.' : 'Fechando aplicativo.',
+    if (Platform.isIOS) {
+      return CommandResult.fail(
+        'No iOS, use os gestos do sistema para fechar apps.',
+      );
+    }
+    if (!Platform.isAndroid) {
+      return CommandResult.fail('Comando disponível apenas no Android.');
+    }
+    final isEnabled = await _phoneControlService.isAccessibilityEnabled();
+    if (!isEnabled) {
+      await _phoneControlService.openAccessibilitySettings();
+      return CommandResult.fail(
+        'Ative o serviço VozComando em Acessibilidade para usar esse comando.',
+      );
+    }
+    final success = await _phoneControlService.pressHome(times: 2);
+    if (!success) return CommandResult.fail('Não consegui ir para a tela inicial.');
+    await SystemSound.play(SystemSoundType.click);
+    return CommandResult.ok(
+      appName != null ? 'Indo para a tela inicial.' : 'Tela inicial.',
     );
   }
 

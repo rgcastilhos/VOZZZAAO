@@ -37,6 +37,11 @@ class MainActivity : FlutterActivity() {
                         result.success(openApp(packageName))
                     }
 
+                    "pressHome" -> {
+                        val times = call.argument<Int>("times") ?: 2
+                        result.success(PhoneAccessibilityService.pressHome(times))
+                    }
+
                     else -> result.notImplemented()
                 }
             }

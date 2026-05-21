@@ -39,5 +39,17 @@ class PhoneAccessibilityService : AccessibilityService() {
             }
             return true
         }
+
+        fun pressHome(times: Int): Boolean {
+            val service = current ?: return false
+            val safeTimes = times.coerceIn(1, 5)
+            repeat(safeTimes) { index ->
+                handler.postDelayed(
+                    { service.performGlobalAction(GLOBAL_ACTION_HOME) },
+                    index * 300L,
+                )
+            }
+            return true
+        }
     }
 }

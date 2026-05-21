@@ -58,4 +58,12 @@ class PhoneControlService {
         false;
   }
 
+  Future<bool> pressHome({int times = 2}) async {
+    if (!Platform.isAndroid) return false;
+    final safeTimes = times.clamp(1, 5).toInt();
+    return await _channel.invokeMethod<bool>('pressHome', <String, int>{
+          'times': safeTimes,
+        }) ??
+        false;
+  }
 }
