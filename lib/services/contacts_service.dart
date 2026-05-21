@@ -20,7 +20,9 @@ class VoiceContactsService {
       return const <ContactMatch>[];
     }
 
-    final contacts = await FlutterContacts.getAll(withProperties: true);
+    final contacts = await FlutterContacts.getAll(
+      properties: {ContactProperty.phone},
+    );
     final matches = <ContactMatch>[];
 
     for (final contact in contacts) {
@@ -30,8 +32,8 @@ class VoiceContactsService {
       final normalizedName = _normalize(name);
       final score = _score(normalizedQuery, normalizedName);
       if (score >= _threshold) {
-        final phone = contact.phones.first.number;
-        if (phone == null || phone.isEmpty) continue;
+        final phone = contact.phones.first.number.trim();
+        if (phone.isEmpty) continue;
         matches.add(ContactMatch(name: name, phone: phone, score: score));
       }
     }
