@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../services/contacts_service.dart';
 import '../services/intent_parser.dart';
 import '../services/speech_service.dart';
 import '../services/tts_service.dart';
+import '../services/wake_service.dart';
 
 enum VoiceUiState { aguardando, ouvindo, processando, executando, erro }
 
@@ -30,8 +32,10 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     VoiceContactsService(),
     AppResolver(),
   );
+  final WakeService _wakeService = WakeService();
 
   VoiceUiState _state = VoiceUiState.aguardando;
+  bool _wakeEnabled = false;
   String _recognizedText = '';
   String _statusMessage = 'Toque no microfone para começar';
   Timer? _processTimer;
@@ -109,6 +113,23 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
   Future<void> _requestPermissions() async {
     await Permission.microphone.request();
     await Permission.contacts.request();
+    await Permission.notification.request();
+  }
+
+  Future<void> _toggleWakeMode() async {
+    if (_wakeEnabled) {
+      await _wakeService.stop();
+      setState(() => _wakeEnabled = false);
+      await _ttsService.speak('Modo Bruno desligado.');
+    } else {
+      final started = await _wakeService.start();
+      setState(() => _wakeEnabled = started);
+      if (started) {
+        await _ttsService.speak('Bruno está escutando. Diga Ei Bruno mais o comando.');
+      } else {
+        await _ttsService.speak('Não foi possível iniciar o modo Bruno.');
+      }
+    }
   }
 
   @override
@@ -117,6 +138,7 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     _waveController.dispose();
     _processTimer?.cancel();
     _speechService.stopListening();
+    _wakeService.stop();
     super.dispose();
   }
 
@@ -450,9 +472,9 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
 
             const SizedBox(height: 16),
 
-            // Mapear sistema button
+            // Wake Word (Bruno) toggle button
             GestureDetector(
-              onTap: _onMapearSistema,
+              onTap: _toggleWakeMode,
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 24),
                 padding: const EdgeInsets.symmetric(
@@ -460,25 +482,37 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
                   vertical: 12,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF835BFF).withValues(alpha: 0.12),
+                  color: _wakeEnabled
+                      ? const Color(0xFF20E3B2).withValues(alpha: 0.15)
+                      : const Color(0xFF835BFF).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: const Color(0xFF835BFF).withValues(alpha: 0.4),
+                    color: _wakeEnabled
+                        ? const Color(0xFF20E3B2).withValues(alpha: 0.6)
+                        : const Color(0xFF835BFF).withValues(alpha: 0.4),
                   ),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
-                    const Icon(
-                      Icons.auto_awesome_rounded,
-                      color: Color(0xFF835BFF),
+                    Icon(
+                      _wakeEnabled
+                          ? Icons.mic_external_on_rounded
+                          : Icons.mic_none_rounded,
+                      color: _wakeEnabled
+                          ? const Color(0xFF20E3B2)
+                          : const Color(0xFF835BFF),
                       size: 18,
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Mapear sistema (se adaptar)',
+                      _wakeEnabled
+                          ? 'Bruno está escutando (ativo)'
+                          : 'Ativar Bruno (wake word)',
                       style: TextStyle(
-                        color: const Color(0xFF835BFF).withValues(alpha: 0.9),
+                        color: _wakeEnabled
+                            ? const Color(0xFF20E3B2).withValues(alpha: 0.95)
+                            : const Color(0xFF835BFF).withValues(alpha: 0.9),
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),

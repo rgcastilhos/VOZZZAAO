@@ -4,6 +4,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -40,6 +41,20 @@ class MainActivity : FlutterActivity() {
                     "pressHome" -> {
                         val times = call.argument<Int>("times") ?: 2
                         result.success(PhoneAccessibilityService.pressHome(times))
+                    }
+
+                    "startWakeService" -> {
+                        val intent = Intent(this, VozComandoForegroundService::class.java)
+                        ContextCompat.startForegroundService(this, intent)
+                        result.success(true)
+                    }
+
+                    "stopWakeService" -> {
+                        val intent = Intent(this, VozComandoForegroundService::class.java).apply {
+                            action = VozComandoForegroundService.ACTION_STOP
+                        }
+                        startService(intent)
+                        result.success(null)
                     }
 
                     else -> result.notImplemented()

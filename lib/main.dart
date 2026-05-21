@@ -9,7 +9,6 @@ void main() {
 class VozComandoApp extends StatelessWidget {
   const VozComandoApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
