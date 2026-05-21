@@ -1,0 +1,60 @@
+openapi: 3.1.0
+info:
+  title: VozComando Intent API
+  version: 1.0.0
+paths:
+  /api/intent:
+    post:
+      summary: Interpreta comando de voz em intenção estruturada
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [texto]
+              properties:
+                texto:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+                contexto:
+                  type: object
+                  properties:
+                    ultimaAcao:
+                      type: string
+                    ultimoAlvo:
+                      type: string
+      responses:
+        '200':
+          description: Intenção detectada
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [acao, alvo, parametros, confianca, ambiguo, perguntaConfirmacao]
+                properties:
+                  acao:
+                    type: string
+                  alvo:
+                    type: [string, 'null']
+                  parametros:
+                    type: object
+                    properties:
+                      mensagem:
+                        type: [string, 'null']
+                      horario:
+                        type: [string, 'null']
+                      local:
+                        type: [string, 'null']
+                      query:
+                        type: [string, 'null']
+                  confianca:
+                    type: string
+                    enum: [alta, media, baixa]
+                  ambiguo:
+                    type: boolean
+                  perguntaConfirmacao:
+                    type: [string, 'null']
+        '400':
+          description: Entrada inválida ou bloqueada
