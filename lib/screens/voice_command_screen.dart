@@ -96,13 +96,14 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    _setup();
+    _setupAndStart();
   }
 
-  Future<void> _setup() async {
+  Future<void> _setupAndStart() async {
     await _ttsService.initialize();
     await _requestPermissions();
     await _speechService.initialize();
+    if (mounted) await _autoRestartListening();
   }
 
   Future<void> _requestPermissions() async {
@@ -115,6 +116,7 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     _pulseController.dispose();
     _waveController.dispose();
     _processTimer?.cancel();
+    _speechService.stopListening();
     super.dispose();
   }
 
@@ -124,26 +126,7 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       setState(() => _state = VoiceUiState.aguardando);
       return;
     }
-
-    setState(() {
-      _state = VoiceUiState.ouvindo;
-      _recognizedText = '';
-    });
-
-    await _speechService.startListening(
-      onResult: (String text, bool isFinal) async {
-        setState(() => _recognizedText = text);
-        if (text.trim().isEmpty) return;
-        _processTimer?.cancel();
-        if (isFinal) {
-          await _processRecognizedText(text);
-          return;
-        }
-        _processTimer = Timer(const Duration(milliseconds: 1200), () {
-          _processRecognizedText(text);
-        });
-      },
-    );
+    await _autoRestartListening();
   }
 
   Future<void> _processRecognizedText(String text) async {
