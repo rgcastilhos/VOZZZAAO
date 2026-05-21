@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:developer' as developer;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -244,6 +243,7 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
   Future<bool> _confirmExecution(VoiceIntent intent) async {
     if (!intent.requiresConfirmation) return true;
     await _speechService.stopListening();
+    if (!mounted) return true;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
@@ -284,28 +284,6 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     return confirm ?? false;
   }
 
-  Future<void> _onMapearSistema() async {
-    setState(() {
-      _state = VoiceUiState.processando;
-      _recognizedText = 'Mapear sistema...';
-    });
-    final intent = const VoiceIntent(
-      action: VoiceAction.mapearCelular,
-      confidence: 1.0,
-    );
-    setState(() => _state = VoiceUiState.executando);
-    final result = await _executor.execute(intent);
-    await _ttsService.speak(result.message);
-    setState(() {
-      _state = result.success ? VoiceUiState.aguardando : VoiceUiState.erro;
-      _statusMessage = result.message;
-    });
-    if (!result.success) {
-      await Future<void>.delayed(const Duration(seconds: 2));
-      if (mounted) setState(() => _state = VoiceUiState.aguardando);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final color = _stateColor;
@@ -323,7 +301,7 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
               height: 48,
               child: AnimatedBuilder(
                 animation: _waveController,
-                builder: (_, __) => CustomPaint(
+                builder: (ctx, _) => CustomPaint(
                   size: const Size(double.infinity, 48),
                   painter: _SoundWavePainter(
                     progress: _waveController.value,

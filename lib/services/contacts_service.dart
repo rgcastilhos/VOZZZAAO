@@ -15,21 +15,23 @@ class VoiceContactsService {
     final normalizedQuery = _normalize(query);
     if (normalizedQuery.isEmpty) return const <ContactMatch>[];
 
-    final hasPermission = await FlutterContacts.requestPermission();
-    if (!hasPermission) return const <ContactMatch>[];
+    final status = await FlutterContacts.permissions.request(PermissionType.read);
+    if (status != PermissionStatus.granted && status != PermissionStatus.limited) {
+      return const <ContactMatch>[];
+    }
 
-    final contacts = await FlutterContacts.getContacts(withProperties: true);
+    final contacts = await FlutterContacts.getAll(withProperties: true);
     final matches = <ContactMatch>[];
 
     for (final contact in contacts) {
-      final name = contact.displayName.trim();
+      final name = contact.displayName?.trim() ?? '';
       if (name.isEmpty || contact.phones.isEmpty) continue;
 
       final normalizedName = _normalize(name);
       final score = _score(normalizedQuery, normalizedName);
       if (score >= _threshold) {
         final phone = contact.phones.first.number;
-        if (phone.isEmpty) continue;
+        if (phone == null || phone.isEmpty) continue;
         matches.add(ContactMatch(name: name, phone: phone, score: score));
       }
     }
