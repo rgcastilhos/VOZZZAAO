@@ -9,44 +9,28 @@ class ContactMatch {
 }
 
 class VoiceContactsService {
-  static const double _threshold = 0.6;
+  static const double _threshold = 0.4;
 
   Future<List<ContactMatch>> searchByName(String query) async {
     final normalizedQuery = _normalize(query);
-    if (normalizedQuery.isEmpty) {
-      return const <ContactMatch>[];
-    }
+    if (normalizedQuery.isEmpty) return const <ContactMatch>[];
 
-    final permission = await FlutterContacts.permissions.request(
-      PermissionType.read,
-    );
-    if (permission != PermissionStatus.granted &&
-        permission != PermissionStatus.limited) {
-      return const <ContactMatch>[];
-    }
+    final hasPermission = await FlutterContacts.requestPermission();
+    if (!hasPermission) return const <ContactMatch>[];
 
-    final contacts = await FlutterContacts.getAll(
-      properties: const <ContactProperty>{ContactProperty.phone},
-    );
+    final contacts = await FlutterContacts.getContacts(withProperties: true);
     final matches = <ContactMatch>[];
-    for (final contact in contacts) {
-      final displayName = contact.displayName?.trim();
-      if (displayName == null ||
-          displayName.isEmpty ||
-          contact.phones.isEmpty) {
-        continue;
-      }
 
-      final name = _normalize(displayName);
-      final score = _score(normalizedQuery, name);
+    for (final contact in contacts) {
+      final name = contact.displayName.trim();
+      if (name.isEmpty || contact.phones.isEmpty) continue;
+
+      final normalizedName = _normalize(name);
+      final score = _score(normalizedQuery, normalizedName);
       if (score >= _threshold) {
-        matches.add(
-          ContactMatch(
-            name: displayName,
-            phone: contact.phones.first.number,
-            score: score,
-          ),
-        );
+        final phone = contact.phones.first.number;
+        if (phone.isEmpty) continue;
+        matches.add(ContactMatch(name: name, phone: phone, score: score));
       }
     }
 
@@ -55,51 +39,36 @@ class VoiceContactsService {
   }
 
   String _normalize(String text) {
-    const accentsFrom = 'áàâãäéèêëíìîïóòôõöúùûüç';
-    const accentsTo = 'aaaaaeeeeiiiiooooouuuuc';
-    final buffer = StringBuffer();
+    const from = 'áàâãäéèêëíìîïóòôõöúùûüç';
+    const to   = 'aaaaaeeeeiiiiooooouuuuc';
+    final buf = StringBuffer();
     for (final rune in text.toLowerCase().runes) {
-      final char = String.fromCharCode(rune);
-      final index = accentsFrom.indexOf(char);
-      buffer.write(index >= 0 ? accentsTo[index] : char);
+      final ch = String.fromCharCode(rune);
+      final idx = from.indexOf(ch);
+      buf.write(idx >= 0 ? to[idx] : ch);
     }
-    return buffer.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
+    return buf.toString().replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   double _score(String query, String candidate) {
-    final normalizedQuery = _normalize(query);
-    final normalizedCandidate = _normalize(candidate);
-    if (normalizedCandidate == normalizedQuery) {
-      return 1.0;
-    }
+    if (candidate == query) return 1.0;
+    if (candidate.contains(query)) return 0.85;
 
-    final queryWords = normalizedQuery.split(' ');
-    final candidateWords = normalizedCandidate.split(' ');
-
-    var matchedWords = 0;
-    for (final word in queryWords) {
-      if (candidateWords.any(
-        (candidateWord) => candidateWord.startsWith(word),
-      )) {
-        matchedWords++;
+    final qWords = query.split(' ');
+    final cWords = candidate.split(' ');
+    var matched = 0;
+    for (final w in qWords) {
+      if (cWords.any((cw) => cw.startsWith(w) || w.startsWith(cw))) {
+        matched++;
       }
     }
-    final wordScore = matchedWords / queryWords.length;
+    final wordScore = matched / qWords.length;
 
-    final editDistance = _levenshtein(
-      normalizedQuery,
-      normalizedCandidate,
-    ).toDouble();
-    final maxLen = normalizedQuery.length > normalizedCandidate.length
-        ? normalizedQuery.length
-        : normalizedCandidate.length;
-    final distanceScore = maxLen == 0 ? 0.0 : (1 - (editDistance / maxLen));
+    final dist = _levenshtein(query, candidate).toDouble();
+    final maxLen = query.length > candidate.length ? query.length : candidate.length;
+    final distScore = maxLen == 0 ? 0.0 : 1.0 - (dist / maxLen);
 
-    final orderBonus = normalizedCandidate.contains(normalizedQuery)
-        ? 0.15
-        : 0.0;
-    final score = (wordScore * 0.55) + (distanceScore * 0.45) + orderBonus;
-    return score.clamp(0.0, 1.0);
+    return ((wordScore * 0.55) + (distScore * 0.45)).clamp(0.0, 1.0);
   }
 
   int _levenshtein(String a, String b) {
@@ -107,24 +76,23 @@ class VoiceContactsService {
     if (a.isEmpty) return b.length;
     if (b.isEmpty) return a.length;
 
-    final previous = List<int>.generate(b.length + 1, (i) => i);
-    final current = List<int>.filled(b.length + 1, 0);
+    final prev = List<int>.generate(b.length + 1, (i) => i);
+    final curr = List<int>.filled(b.length + 1, 0);
 
     for (var i = 1; i <= a.length; i++) {
-      current[0] = i;
+      curr[0] = i;
       for (var j = 1; j <= b.length; j++) {
         final cost = a[i - 1] == b[j - 1] ? 0 : 1;
-        current[j] = [
-          current[j - 1] + 1,
-          previous[j] + 1,
-          previous[j - 1] + cost,
+        curr[j] = <int>[
+          curr[j - 1] + 1,
+          prev[j] + 1,
+          prev[j - 1] + cost,
         ].reduce((x, y) => x < y ? x : y);
       }
       for (var j = 0; j <= b.length; j++) {
-        previous[j] = current[j];
+        prev[j] = curr[j];
       }
     }
-
-    return previous[b.length];
+    return prev[b.length];
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -20,7 +21,8 @@ class VoiceCommandScreen extends StatefulWidget {
   State<VoiceCommandScreen> createState() => _VoiceCommandScreenState();
 }
 
-class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
+class _VoiceCommandScreenState extends State<VoiceCommandScreen>
+    with TickerProviderStateMixin {
   final SpeechService _speechService = SpeechService();
   final TtsService _ttsService = TtsService();
   final IntentParser _intentParser = IntentParser();
@@ -30,52 +32,70 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
   );
 
   VoiceUiState _state = VoiceUiState.aguardando;
-  String _recognizedText = 'Toque no microfone para começar';
-  String _detectedAction = 'Nenhuma ação detectada';
+  String _recognizedText = '';
+  String _statusMessage = 'Toque no microfone para começar';
   Timer? _processTimer;
   String _lastProcessedText = '';
 
-  String _labelEstado() {
+  late final AnimationController _pulseController;
+  late final AnimationController _waveController;
+  late final Animation<double> _pulseAnim;
+
+  static const Color _accentBlue = Color(0xFF2CCBFF);
+  static const Color _accentPurple = Color(0xFF835BFF);
+  static const Color _accentGreen = Color(0xFF20E3B2);
+  static const Color _accentRed = Color(0xFFFF5C8A);
+
+  Color get _stateColor {
     switch (_state) {
       case VoiceUiState.aguardando:
-        return 'Aguardando';
+        return _accentBlue;
       case VoiceUiState.ouvindo:
-        return 'Ouvindo';
+        return _accentPurple;
       case VoiceUiState.processando:
-        return 'Processando';
+        return _accentPurple;
       case VoiceUiState.executando:
-        return 'Executando';
+        return _accentGreen;
       case VoiceUiState.erro:
-        return 'Erro';
+        return _accentRed;
     }
   }
 
-  Color _stateColor() {
+  String get _hintText {
     switch (_state) {
       case VoiceUiState.aguardando:
-        return const Color(0xFF5C7CFF);
+        return _recognizedText.isNotEmpty
+            ? _recognizedText
+            : 'Diga: "Abrir WhatsApp"';
       case VoiceUiState.ouvindo:
-        return const Color(0xFF2CCBFF);
+        return _recognizedText.isNotEmpty ? _recognizedText : 'Ouvindo...';
       case VoiceUiState.processando:
-        return const Color(0xFF835BFF);
+        return 'Processando...';
       case VoiceUiState.executando:
-        return const Color(0xFF20E3B2);
+        return 'Executando...';
       case VoiceUiState.erro:
-        return const Color(0xFFFF5C8A);
+        return _statusMessage;
     }
-  }
-
-  String _promptText() {
-    final text = _recognizedText.trim();
-    if (text.isEmpty || text == 'Toque no microfone para começar') {
-      return 'Diga: "Mapear celular"';
-    }
-    return text;
   }
 
   @override
   void initState() {
     super.initState();
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat(reverse: true);
+
+    _waveController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+
+    _pulseAnim = Tween<double>(begin: 0.92, end: 1.08).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
     _setup();
   }
 
@@ -90,24 +110,35 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
     await Permission.contacts.request();
   }
 
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    _waveController.dispose();
+    _processTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _onMicTap() async {
     if (_speechService.isListening) {
       await _speechService.stopListening();
+      setState(() => _state = VoiceUiState.aguardando);
       return;
     }
 
-    setState(() => _state = VoiceUiState.ouvindo);
+    setState(() {
+      _state = VoiceUiState.ouvindo;
+      _recognizedText = '';
+    });
+
     await _speechService.startListening(
       onResult: (String text, bool isFinal) async {
-        setState(() => _recognizedText = text.isEmpty ? '...' : text);
+        setState(() => _recognizedText = text);
         if (text.trim().isEmpty) return;
-
         _processTimer?.cancel();
         if (isFinal) {
           await _processRecognizedText(text);
           return;
         }
-
         _processTimer = Timer(const Duration(milliseconds: 1200), () {
           _processRecognizedText(text);
         });
@@ -118,7 +149,6 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
   Future<void> _processRecognizedText(String text) async {
     final normalized = text.trim().toLowerCase();
     if (normalized.isEmpty || normalized == _lastProcessedText) return;
-
     _lastProcessedText = normalized;
     _processTimer?.cancel();
     await _speechService.stopListening();
@@ -128,19 +158,28 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
   Future<void> _process(String text) async {
     setState(() => _state = VoiceUiState.processando);
     final intent = await _intentParser.parse(text);
-    setState(() => _detectedAction = _actionText(intent));
 
     if (!intent.isKnown) {
-      setState(() => _state = VoiceUiState.erro);
+      setState(() {
+        _state = VoiceUiState.erro;
+        _statusMessage = 'Não entendi, tente novamente.';
+      });
       await _ttsService.speak('Não consegui entender, tente novamente.');
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (mounted) setState(() => _state = VoiceUiState.aguardando);
       return;
     }
 
     if (intent.ambiguous) {
-      setState(() => _state = VoiceUiState.erro);
+      setState(() {
+        _state = VoiceUiState.erro;
+        _statusMessage = intent.confirmationQuestion ?? 'Comando ambíguo.';
+      });
       await _ttsService.speak(
         intent.confirmationQuestion ?? 'Seu comando está ambíguo.',
       );
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (mounted) setState(() => _state = VoiceUiState.aguardando);
       return;
     }
 
@@ -149,8 +188,11 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
         intent.target != null) {
       final matches = await _executor.findContacts(intent.target!);
       if (matches.length > 1) {
-        setState(() => _state = VoiceUiState.aguardando);
         final top = matches.take(2).map((m) => m.name).join(' e ');
+        setState(() {
+          _state = VoiceUiState.aguardando;
+          _statusMessage = 'Encontrei $top, qual você quer?';
+        });
         await _ttsService.speak('Encontrei $top, qual você quer?');
         return;
       }
@@ -165,247 +207,440 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen> {
     setState(() => _state = VoiceUiState.executando);
     final result = await _executor.execute(intent);
     await _ttsService.speak(result.message);
+    setState(() {
+      _state = result.success ? VoiceUiState.aguardando : VoiceUiState.erro;
+      _statusMessage = result.message;
+    });
 
-    setState(
-      () =>
-          _state = result.success ? VoiceUiState.aguardando : VoiceUiState.erro,
-    );
-  }
-
-  @override
-  void dispose() {
-    _processTimer?.cancel();
-    super.dispose();
+    if (!result.success) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (mounted) setState(() => _state = VoiceUiState.aguardando);
+    }
   }
 
   Future<bool> _confirmExecution(VoiceIntent intent) async {
     if (!intent.requiresConfirmation) return true;
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Confirmar ação'),
-          content: Text('Deseja executar: ${_actionText(intent)}?'),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar'),
+      builder: (BuildContext ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0D0F1E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: _accentPurple.withValues(alpha: 0.4)),
+        ),
+        title: const Text(
+          'Confirmar ação',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          intent.confirmationQuestion ?? 'Deseja executar esse comando?',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              'Cancelar',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
             ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Executar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: _accentPurple,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
-          ],
-        );
-      },
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
     );
     return confirm ?? false;
   }
 
-  String _actionText(VoiceIntent intent) {
-    final target = intent.target ?? 'sem alvo';
-    switch (intent.action) {
-      case VoiceAction.abrirWhatsappContato:
-        return 'Abrir WhatsApp com $target';
-      case VoiceAction.ligarPara:
-        return 'Ligar para $target';
-      case VoiceAction.enviarMensagem:
-        return 'Enviar mensagem para $target';
-      case VoiceAction.abrirApp:
-        return 'Abrir app $target';
-      case VoiceAction.tocarMusica:
-        return 'Tocar $target';
-      case VoiceAction.navegar:
-        return 'Navegar até $target';
-      case VoiceAction.definirAlarme:
-        return 'Definir alarme';
-      case VoiceAction.pesquisarGoogle:
-        return 'Pesquisar $target';
-      case VoiceAction.voltar:
-        return 'Voltar';
-      case VoiceAction.fecharAplicativo:
-        return 'Fechar aplicativo';
-      case VoiceAction.mapearCelular:
-        return 'Mapear celular';
-      case VoiceAction.desconhecido:
-        return 'Comando desconhecido';
+  Future<void> _onMapearSistema() async {
+    setState(() {
+      _state = VoiceUiState.processando;
+      _recognizedText = 'Mapear sistema...';
+    });
+    final intent = const VoiceIntent(
+      action: VoiceAction.mapearCelular,
+      confidence: 1.0,
+    );
+    setState(() => _state = VoiceUiState.executando);
+    final result = await _executor.execute(intent);
+    await _ttsService.speak(result.message);
+    setState(() {
+      _state = result.success ? VoiceUiState.aguardando : VoiceUiState.erro;
+      _statusMessage = result.message;
+    });
+    if (!result.success) {
+      await Future<void>.delayed(const Duration(seconds: 2));
+      if (mounted) setState(() => _state = VoiceUiState.aguardando);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final stateColor = _stateColor();
+    final color = _stateColor;
+    final isListening = _state == VoiceUiState.ouvindo;
+
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: <Widget>[
-          Image.asset(
-            'assets/images/voice_background.png',
-            fit: BoxFit.cover,
-            alignment: Alignment.center,
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: <Color>[
-                  Colors.black.withValues(alpha: 0.04),
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.30),
-                ],
+      backgroundColor: const Color(0xFF07091A),
+      body: SafeArea(
+        child: Column(
+          children: <Widget>[
+            const SizedBox(height: 24),
+
+            // Sound wave
+            SizedBox(
+              height: 48,
+              child: AnimatedBuilder(
+                animation: _waveController,
+                builder: (_, __) => CustomPaint(
+                  size: const Size(double.infinity, 48),
+                  painter: _SoundWavePainter(
+                    progress: _waveController.value,
+                    active: isListening,
+                    color: color,
+                  ),
+                ),
               ),
             ),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-              child: Column(
-                children: <Widget>[
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: _GlassPill(
-                      borderColor: stateColor,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Icon(Icons.graphic_eq, color: stateColor, size: 18),
-                          const SizedBox(width: 8),
-                          Text(
-                            _labelEstado(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                            ),
+
+            const SizedBox(height: 20),
+
+            // Title
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
+              child: RichText(
+                textAlign: TextAlign.center,
+                text: TextSpan(
+                  style: const TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w800,
+                    height: 1.15,
+                    color: Colors.white,
+                  ),
+                  children: <InlineSpan>[
+                    const TextSpan(text: 'Seu celular,\n'),
+                    WidgetSpan(
+                      child: ShaderMask(
+                        shaderCallback: (bounds) => const LinearGradient(
+                          colors: <Color>[Color(0xFF2CCBFF), Color(0xFF835BFF)],
+                        ).createShader(bounds),
+                        child: const Text(
+                          'comandado',
+                          style: TextStyle(
+                            fontSize: 36,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                  const Spacer(flex: 5),
-                  GestureDetector(
-                    onTap: _onMicTap,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 220),
-                      width: 238,
-                      height: 238,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: stateColor.withValues(
-                            alpha: _state == VoiceUiState.aguardando
-                                ? 0.32
-                                : 0.78,
+                    const TextSpan(text: '\npela sua voz.'),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // Subtitle
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                'Fale o que você precisa,\nele faz tudo por você.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                  height: 1.5,
+                ),
+              ),
+            ),
+
+            const Spacer(),
+
+            // Mic button
+            AnimatedBuilder(
+              animation: _pulseAnim,
+              builder: (_, child) => Transform.scale(
+                scale: isListening ? _pulseAnim.value : 1.0,
+                child: child,
+              ),
+              child: GestureDetector(
+                onTap: _onMicTap,
+                child: SizedBox(
+                  width: 220,
+                  height: 220,
+                  child: CustomPaint(
+                    painter: _MicRingPainter(color: color, active: isListening),
+                    child: Center(
+                      child: Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: <Color>[
+                              color.withValues(alpha: 0.25),
+                              const Color(0xFF0D0F2A),
+                            ],
                           ),
-                          width: _state == VoiceUiState.ouvindo ? 3 : 1.4,
-                        ),
-                        boxShadow: <BoxShadow>[
-                          BoxShadow(
-                            color: stateColor.withValues(
-                              alpha: _state == VoiceUiState.ouvindo
-                                  ? 0.38
-                                  : 0.14,
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: color.withValues(alpha: 0.5),
+                              blurRadius: 30,
+                              spreadRadius: 4,
                             ),
-                            blurRadius: _state == VoiceUiState.ouvindo
-                                ? 38
-                                : 22,
-                            spreadRadius: _state == VoiceUiState.ouvindo
-                                ? 8
-                                : 2,
-                          ),
-                        ],
-                      ),
-                      child: Center(
+                          ],
+                        ),
                         child: Icon(
-                          _speechService.isListening
-                              ? Icons.pause
-                              : Icons.mic_none,
-                          color: Colors.white.withValues(alpha: 0.16),
-                          size: 82,
+                          _state == VoiceUiState.ouvindo
+                              ? Icons.pause_rounded
+                              : Icons.mic_rounded,
+                          color: Colors.white,
+                          size: 52,
                         ),
                       ),
                     ),
                   ),
-                  const Spacer(flex: 2),
-                  _GlassPill(
-                    borderColor: stateColor,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 22,
-                      vertical: 16,
-                    ),
-                    child: Text(
-                      _promptText(),
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                ),
+              ),
+            ),
+
+            const Spacer(),
+
+            // Hint / recognized text pill
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D0F2A).withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: color.withValues(alpha: 0.35),
                   ),
-                  const SizedBox(height: 12),
-                  _GlassPill(
-                    borderColor: const Color(0xFF725CFF),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 12,
+                  boxShadow: <BoxShadow>[
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.15),
+                      blurRadius: 20,
                     ),
-                    child: Text(
-                      _detectedAction,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                  ],
+                ),
+                child: Text(
+                  _hintText,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Mapear sistema button
+            GestureDetector(
+              onTap: _onMapearSistema,
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF835BFF).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFF835BFF).withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: Color(0xFF835BFF),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Mapear sistema (se adaptar)',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.82),
-                        fontSize: 13,
+                        color: const Color(0xFF835BFF).withValues(alpha: 0.9),
+                        fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Bottom bar
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D0F2A).withValues(alpha: 0.6),
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.white.withValues(alpha: 0.06),
                   ),
-                  const SizedBox(height: 96),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: const <Widget>[
+                  _BottomFeature(icon: Icons.bolt_rounded, label: 'Rápido'),
+                  _BottomFeature(
+                    icon: Icons.psychology_rounded,
+                    label: 'Inteligente',
+                  ),
+                  _BottomFeature(
+                    icon: Icons.location_on_rounded,
+                    label: 'Prático',
+                  ),
+                  _BottomFeature(
+                    icon: Icons.verified_user_rounded,
+                    label: 'Seguro',
+                  ),
                 ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-class _GlassPill extends StatelessWidget {
-  const _GlassPill({
-    required this.child,
-    required this.borderColor,
-    this.padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-  });
+class _BottomFeature extends StatelessWidget {
+  const _BottomFeature({required this.icon, required this.label});
 
-  final Widget child;
-  final Color borderColor;
-  final EdgeInsetsGeometry padding;
+  final IconData icon;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 340),
-      padding: padding,
-      decoration: BoxDecoration(
-        color: const Color(0xFF060719).withValues(alpha: 0.70),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: borderColor.withValues(alpha: 0.38)),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: borderColor.withValues(alpha: 0.20),
-            blurRadius: 22,
-            spreadRadius: -4,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(icon, color: Colors.white.withValues(alpha: 0.5), size: 22),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.45),
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
           ),
-        ],
-      ),
-      child: child,
+        ),
+      ],
     );
   }
+}
+
+class _MicRingPainter extends CustomPainter {
+  const _MicRingPainter({required this.color, required this.active});
+
+  final Color color;
+  final bool active;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final outerRadius = size.width / 2;
+
+    // Outer glow ring
+    canvas.drawCircle(
+      center,
+      outerRadius - 4,
+      Paint()
+        ..color = color.withValues(alpha: active ? 0.18 : 0.08)
+        ..style = PaintingStyle.fill,
+    );
+
+    // Outer ring stroke
+    canvas.drawCircle(
+      center,
+      outerRadius - 4,
+      Paint()
+        ..color = color.withValues(alpha: active ? 0.8 : 0.4)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = active ? 2.5 : 1.5,
+    );
+
+    // Inner ring
+    canvas.drawCircle(
+      center,
+      outerRadius * 0.72,
+      Paint()
+        ..color = color.withValues(alpha: active ? 0.5 : 0.2)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_MicRingPainter old) =>
+      old.color != color || old.active != active;
+}
+
+class _SoundWavePainter extends CustomPainter {
+  const _SoundWavePainter({
+    required this.progress,
+    required this.active,
+    required this.color,
+  });
+
+  final double progress;
+  final bool active;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const barCount = 28;
+    final barWidth = (size.width / barCount) * 0.55;
+    final spacing = size.width / barCount;
+    final centerY = size.height / 2;
+    final paint = Paint()
+      ..color = color.withValues(alpha: 0.75)
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = barWidth;
+
+    for (var i = 0; i < barCount; i++) {
+      final x = i * spacing + spacing / 2;
+      final phase = (i / barCount) + progress;
+      final amplitude = active
+          ? 0.35 + 0.65 * math.pow(math.sin(phase * math.pi * 2).abs(), 0.5)
+          : 0.15 + 0.15 * math.sin(phase * math.pi * 2).abs();
+      final barHeight = size.height * amplitude;
+      canvas.drawLine(
+        Offset(x, centerY - barHeight / 2),
+        Offset(x, centerY + barHeight / 2),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SoundWavePainter old) =>
+      old.progress != progress || old.active != active || old.color != color;
 }
