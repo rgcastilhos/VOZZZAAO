@@ -9,6 +9,7 @@ enum VoiceAction {
   pesquisarGoogle,
   voltar,
   fecharAplicativo,
+  fecharAppExterno,
   mapearCelular,
   desconhecido,
 }
@@ -73,6 +74,8 @@ class VoiceIntent {
       case 'FECHAR_APP':
       case 'FECHAR_APLICATIVO':
         return VoiceAction.fecharAplicativo;
+      case 'FECHAR_APP_EXTERNO':
+        return VoiceAction.fecharAppExterno;
       case 'MAPEAR_CELULAR':
       case 'MAPEAR_APPS':
       case 'SINCRONIZAR_APPS':

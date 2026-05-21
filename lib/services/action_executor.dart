@@ -48,6 +48,8 @@ class ActionExecutor {
           return _goBack();
         case VoiceAction.fecharAplicativo:
           return _closeCurrentApp();
+        case VoiceAction.fecharAppExterno:
+          return _closeExternalApp(target);
         case VoiceAction.mapearCelular:
           return _mapPhoneApps();
         case VoiceAction.desconhecido:
@@ -226,6 +228,14 @@ class ActionExecutor {
 
   Future<CommandResult> _closeCurrentApp() async {
     return _pressBack(times: 3, successMessage: 'Fechando aplicativo.');
+  }
+
+  Future<CommandResult> _closeExternalApp(String? appName) async {
+    return _pressBack(
+      times: 2,
+      successMessage:
+          appName != null ? 'Fechando $appName.' : 'Fechando aplicativo.',
+    );
   }
 
   Future<CommandResult> _goBack() async {

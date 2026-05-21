@@ -128,6 +128,21 @@ class IntentParser {
       );
     }
 
+    final fecharExterno = RegExp(
+      r'^(?:fechar|feche|encerrar|matar|sair do|sair de)\s+(?:o\s+|a\s+)?(.+)$',
+    ).firstMatch(clean);
+    if (fecharExterno != null) {
+      final alvo = fecharExterno.group(1)?.trim();
+      if (alvo != null && alvo.isNotEmpty) {
+        developer.log('MATCH: FECHAR_APP_EXTERNO -> $alvo');
+        return VoiceIntent(
+          action: VoiceAction.fecharAppExterno,
+          target: alvo,
+          confidence: 0.93,
+        );
+      }
+    }
+
     if (RegExp(r'^(?:voltar|retornar|back|voltar atras)$').hasMatch(clean)) {
       developer.log('MATCH: VOLTAR');
       return const VoiceIntent(action: VoiceAction.voltar, confidence: 0.95);
