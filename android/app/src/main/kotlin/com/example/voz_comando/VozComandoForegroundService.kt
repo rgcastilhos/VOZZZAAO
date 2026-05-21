@@ -19,9 +19,10 @@ class VozComandoForegroundService : Service() {
 
     private var speechRecognizer: SpeechRecognizer? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val wakeWords = listOf("ei bruno", "e bruno", "oi bruno", "ok bruno", "bruno")
+    private var wakeWords = listOf("ei bruno", "e bruno", "oi bruno", "ok bruno", "bruno")
     private var isListening = false
     private var isWakeWordDetected = false
+    private var userWakeWord = "bruno"
 
     companion object {
         const val CHANNEL_ID = "voz_comando_wake"
@@ -41,6 +42,10 @@ class VozComandoForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        intent?.getStringExtra("wake_word")?.let { word ->
+            userWakeWord = word
+            wakeWords = listOf("ei $word", "e $word", "oi $word", "ok $word", word)
+        }
         when (intent?.action) {
             ACTION_STOP -> {
                 stopSelf()

@@ -44,7 +44,10 @@ class MainActivity : FlutterActivity() {
                     }
 
                     "startWakeService" -> {
-                        val intent = Intent(this, VozComandoForegroundService::class.java)
+                        val wakeWord = call.argument<String>("wakeWord") ?: "bruno"
+                        val intent = Intent(this, VozComandoForegroundService::class.java).apply {
+                            putExtra("wake_word", wakeWord)
+                        }
                         ContextCompat.startForegroundService(this, intent)
                         result.success(true)
                     }

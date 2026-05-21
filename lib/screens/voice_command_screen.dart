@@ -12,6 +12,7 @@ import '../services/contacts_service.dart';
 import '../services/intent_parser.dart';
 import '../services/speech_service.dart';
 import '../services/tts_service.dart';
+import '../services/user_preferences.dart';
 import '../services/wake_service.dart';
 
 enum VoiceUiState { aguardando, ouvindo, processando, executando, erro }
@@ -120,14 +121,19 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     if (_wakeEnabled) {
       await _wakeService.stop();
       setState(() => _wakeEnabled = false);
-      await _ttsService.speak('Modo Bruno desligado.');
+      await _ttsService.speak('Modo escuta desligado.');
     } else {
-      final started = await _wakeService.start();
+      final word = await UserPreferences.getWakeWord() ?? 'bruno';
+      final started = await _wakeService.start(wakeWord: word);
       setState(() => _wakeEnabled = started);
       if (started) {
-        await _ttsService.speak('Bruno está escutando. Diga Ei Bruno mais o comando.');
+        await _ttsService.speak(
+          'Escutando ativo. Diga $word mais o comando.',
+        );
       } else {
-        await _ttsService.speak('Não foi possível iniciar o modo Bruno.');
+        await _ttsService.speak(
+          'Não foi possível iniciar o modo escuta.',
+        );
       }
     }
   }

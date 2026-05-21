@@ -26,9 +26,9 @@ class WakeService {
   bool _isRunning = false;
   bool get isRunning => _isRunning;
 
-  /// Inicia o modo wake word em background.
+  /// Inicia o modo wake word em background com a palavra do usuário.
   /// Retorna true se iniciou com sucesso.
-  Future<bool> start() async {
+  Future<bool> start({String? wakeWord}) async {
     if (!Platform.isAndroid) {
       developer.log(
           'WakeService: iOS não suporta background listening nativo.');
@@ -36,9 +36,11 @@ class WakeService {
     }
     try {
       final result =
-          await _channel.invokeMethod<bool>('startWakeService') ?? false;
+          await _channel.invokeMethod<bool>('startWakeService', <String, String?>{
+            'wakeWord': wakeWord,
+          }) ?? false;
       _isRunning = result;
-      developer.log('WakeService: iniciado = $result');
+      developer.log('WakeService: iniciado = $result, word=$wakeWord');
       return result;
     } catch (e) {
       developer.log('WakeService erro ao iniciar: $e');
