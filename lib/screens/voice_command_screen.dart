@@ -153,6 +153,30 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     _processTimer?.cancel();
     await _speechService.stopListening();
     await _process(text);
+    if (mounted) await _autoRestartListening();
+  }
+
+  Future<void> _autoRestartListening() async {
+    if (!_speechService.isListening) {
+      setState(() {
+        _state = VoiceUiState.ouvindo;
+        _recognizedText = '';
+      });
+      await _speechService.startListening(
+        onResult: (String text, bool isFinal) async {
+          setState(() => _recognizedText = text);
+          if (text.trim().isEmpty) return;
+          _processTimer?.cancel();
+          if (isFinal) {
+            await _processRecognizedText(text);
+            return;
+          }
+          _processTimer = Timer(const Duration(milliseconds: 1200), () {
+            _processRecognizedText(text);
+          });
+        },
+      );
+    }
   }
 
   Future<void> _process(String text) async {
@@ -165,8 +189,6 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
         _statusMessage = 'Não entendi, tente novamente.';
       });
       await _ttsService.speak('Não consegui entender, tente novamente.');
-      await Future<void>.delayed(const Duration(seconds: 2));
-      if (mounted) setState(() => _state = VoiceUiState.aguardando);
       return;
     }
 
@@ -178,8 +200,6 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       await _ttsService.speak(
         intent.confirmationQuestion ?? 'Seu comando está ambíguo.',
       );
-      await Future<void>.delayed(const Duration(seconds: 2));
-      if (mounted) setState(() => _state = VoiceUiState.aguardando);
       return;
     }
 
@@ -199,10 +219,7 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
     }
 
     final canRun = await _confirmExecution(intent);
-    if (!canRun) {
-      setState(() => _state = VoiceUiState.aguardando);
-      return;
-    }
+    if (!canRun) return;
 
     setState(() => _state = VoiceUiState.executando);
     final result = await _executor.execute(intent);
@@ -211,15 +228,11 @@ class _VoiceCommandScreenState extends State<VoiceCommandScreen>
       _state = result.success ? VoiceUiState.aguardando : VoiceUiState.erro;
       _statusMessage = result.message;
     });
-
-    if (!result.success) {
-      await Future<void>.delayed(const Duration(seconds: 2));
-      if (mounted) setState(() => _state = VoiceUiState.aguardando);
-    }
   }
 
   Future<bool> _confirmExecution(VoiceIntent intent) async {
     if (!intent.requiresConfirmation) return true;
+    await _speechService.stopListening();
     final confirm = await showDialog<bool>(
       context: context,
       builder: (BuildContext ctx) => AlertDialog(
