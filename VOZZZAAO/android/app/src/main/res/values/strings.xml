@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="accessibility_service_description">Permite que o VozComando execute comandos globais como voltar.</string>
-    <string name="wake_notification_title">Bruno está escutando</string>
-    <string name="wake_notification_text">Diga 'Ei Bruno' + comando</string>
-    <string name="wake_listening">Escutando comando...</string>
-</resources>
