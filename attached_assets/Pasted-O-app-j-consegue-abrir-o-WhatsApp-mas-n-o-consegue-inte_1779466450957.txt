@@ -1,0 +1,165 @@
+O app já consegue abrir o WhatsApp, mas não consegue interagir dentro dele.
+
+Implementar um módulo AccessibilityNavigator usando AccessibilityService para controlar a interface após abrir apps externos.
+
+Criar:
+
+1. VoiceAccessibilityService.kt
+Serviço de acessibilidade responsável por:
+- observar mudanças de tela
+- capturar rootInActiveWindow
+- listar nós visíveis da tela
+- buscar elementos por texto
+- buscar elementos por contentDescription
+- buscar campos EditText
+- clicar em elementos clicáveis
+- digitar texto em campos focados
+- executar ações globais BACK e HOME
+
+2. AccessibilityNavigator.kt
+Classe utilitária para:
+- waitForPackage(packageName, timeoutMs)
+- dumpCurrentScreen()
+- findNodeByText(text)
+- findNodeByContentDescription(text)
+- findFirstEditableNode()
+- clickNode(node)
+- setText(node, text)
+- performBack()
+- performHome()
+- waitAndRetry()
+
+3. WhatsAppController.kt
+Controlador específico para WhatsApp com funções:
+- openWhatsApp()
+- searchContact(contactName)
+- openConversation(contactName)
+- typeMessage(message)
+- askConfirmationBeforeSend()
+- sendMessage()
+
+Fluxo para SEND_MESSAGE no WhatsApp:
+
+1. Abrir WhatsApp pelo pacote com.whatsapp.
+2. Esperar packageName == com.whatsapp.
+3. Aguardar rootInActiveWindow não nulo.
+4. Fazer dump da tela para logs.
+5. Tentar localizar botão/campo de pesquisa por:
+   - "Search"
+   - "Pesquisar"
+   - "Buscar"
+   - contentDescription contendo "Search"
+   - contentDescription contendo "Pesquisar"
+6. Clicar no campo/botão de pesquisa.
+7. Digitar o nome do contato.
+8. Aguardar resultados.
+9. Procurar nó com texto exatamente igual ou semelhante ao nome do contato.
+10. Clicar no contato.
+11. Aguardar abrir conversa.
+12. Procurar campo de mensagem por:
+   - classe EditText
+   - texto "Mensagem"
+   - hint "Mensagem"
+   - contentDescription "Mensagem"
+   - campo editável visível
+13. Inserir a mensagem usando ACTION_SET_TEXT.
+14. Antes de enviar, chamar confirmação por voz ou diálogo:
+   "Posso enviar a mensagem para [contato]?"
+15. Só se o usuário confirmar, procurar botão enviar por:
+   - contentDescription "Enviar"
+   - contentDescription "Send"
+   - botão clicável próximo ao campo de mensagem
+16. Clicar em enviar.
+17. Registrar logs de cada etapa.
+
+Requisitos:
+- Nunca enviar mensagem sem confirmação.
+- Se não encontrar o contato, retornar erro amigável.
+- Se não encontrar campo de mensagem, retornar erro amigável.
+- Se não encontrar botão enviar, retornar erro amigável.
+- Não travar o app.
+- Usar timeouts e tentativas.
+- Criar logs detalhados com a tela atual.
+Código base que ele precisa usar
+val root = rootInActiveWindow ?: return
+
+fun findByText(node: AccessibilityNodeInfo?, text: String): AccessibilityNodeInfo? {
+    if (node == null) return null
+
+    val nodeText = node.text?.toString() ?: ""
+    val desc = node.contentDescription?.toString() ?: ""
+
+    if (nodeText.contains(text, ignoreCase = true) ||
+        desc.contains(text, ignoreCase = true)
+    ) {
+        return node
+    }
+
+    for (i in 0 until node.childCount) {
+        val result = findByText(node.getChild(i), text)
+        if (result != null) return result
+    }
+
+    return null
+}
+
+Para clicar:
+
+fun clickNode(node: AccessibilityNodeInfo): Boolean {
+    var current: AccessibilityNodeInfo? = node
+
+    while (current != null) {
+        if (current.isClickable) {
+            return current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        }
+        current = current.parent
+    }
+
+    return false
+}
+
+Para digitar:
+
+fun setText(node: AccessibilityNodeInfo, text: String): Boolean {
+    val args = Bundle()
+    args.putCharSequence(
+        AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+        text
+    )
+    return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+}
+Também precisa no AndroidManifest
+<service
+    android:name=".accessibility.VoiceAccessibilityService"
+    android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+    android:exported="false">
+    <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+    </intent-filter>
+
+    <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/accessibility_service_config" />
+</service>
+
+E o arquivo:
+
+<!-- res/xml/accessibility_service_config.xml -->
+<accessibility-service
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewClicked|typeViewFocused"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:canRetrieveWindowContent="true"
+    android:canPerformGestures="true"
+    android:notificationTimeout="100"
+    android:description="@string/accessibility_service_description" />
+Resumo direto
+
+O problema não é o comando nem o Qwen.
+
+O problema é que teu app ainda não tem:
+
+leitor de tela
+buscador de elementos
+clicador
+digitador
+controlador específico do WhatsApp
