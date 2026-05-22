@@ -1,4 +1,5 @@
 import 'phone_control_service.dart';
+import 'user_preferences.dart';
 
 class AppResolver {
   AppResolver([PhoneControlService? phoneControlService])
@@ -45,6 +46,13 @@ class AppResolver {
     final normalized = _normalize(appName);
     if (normalized.isEmpty) return null;
 
+    // 1. Verifica apps mapeados automaticamente (primeiros 15 dias)
+    final mappedApps = await UserPreferences.getMappedApps();
+    if (mappedApps.containsKey(normalized)) {
+      return mappedApps[normalized];
+    }
+
+    // 2. Cache local de apps instalados
     if (_installedApps.isEmpty) {
       await mapInstalledApps();
     }

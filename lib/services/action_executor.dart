@@ -9,6 +9,7 @@ import '../models/intent.dart';
 import 'app_resolver.dart';
 import 'contacts_service.dart';
 import 'phone_control_service.dart';
+import 'user_preferences.dart';
 
 class ActionExecutor {
   ActionExecutor(
@@ -129,6 +130,9 @@ class ActionExecutor {
     if (package == null) {
       return CommandResult.fail('App "$appName" não mapeado.');
     }
+
+    // Registra abertura para mapeamento automático (só nos primeiros 15 dias)
+    await UserPreferences.registerAppOpen(appName, package);
 
     if (await _phoneControlService.openApp(package)) {
       await SystemSound.play(SystemSoundType.click);
